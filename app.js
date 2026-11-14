@@ -1,13 +1,22 @@
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 const AVATARS = ['😀','😎','🤠','🥳','😈','👻','🤖','🦊','🐼','🐸','🦄','🐯'];
+const LEVELS = {
+  beginner: { name: 'BEGINNER', sub: 'Soft Zone 😊😁', cls: 'l1' },
+  advanced: { name: 'ADVANCED', sub: 'Chill Zone 🥵💃', cls: 'l2' },
+  hard:     { name: 'HARD',     sub: 'Hot and Spicy 💋😘👅', cls: 'l3' },
+};
+const levelOf = (cat) => LEVELS[cat] || LEVELS.beginner;
+
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) =>
   ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const rand = (arr) => arr[Math.floor(Math.random() * arr.length)];
 
-let me = null, room = null, players = [], sessions = [];
+let me = null, room = null, players = [];
 let channel = null, pollTimer = null, beatTimer = null, refreshTimer = null;
+let lastGameKey = '';
+let levelCounts = null; // how many built-in questions each level has
 let avatar = localStorage.getItem('avatar') || AVATARS[0];
+let mode = localStorage.getItem('mode') === 'sequential' ? 'sequential' : 'random';
 
 function toast(msg) {
   const t = $('toast');
@@ -20,6 +29,18 @@ function toast(msg) {
 function show(view) {
   $('home').classList.toggle('hidden', view !== 'home');
   $('room').classList.toggle('hidden', view !== 'room');
+}
+
+// only touch the page when the content really changed (keeps things smooth)
+function setHtml(el, html) {
+  if (el._h === html) return false;
+  el.innerHTML = html;
+  el._h = html;
+  return true;
+}
+
+function paintMode() {
+  document.querySelectorAll('.mode').forEach((b) => b.classList.toggle('sel', b.dataset.mode === mode));
 }
 
 // ---------- START ----------
@@ -39,6 +60,7 @@ async function init() {
   $('avatars').innerHTML = AVATARS.map((a) =>
     `<button type="button" class="av ${a === avatar ? 'sel' : ''}" data-av="${a}">${a}</button>`).join('');
   $('nick').value = localStorage.getItem('nick') || '';
+  paintMode();
 
   const linkCode = new URLSearchParams(location.search).get('room');
   if (linkCode) $('code').value = linkCode.toUpperCase().slice(0, 6);
@@ -61,7 +83,8 @@ function profile() {
 
 async function createRoom() {
   const nick = profile(); if (!nick) return;
-  const { data, error } = await sb.rpc('create_room', { p_nickname: nick, p_avatar: avatar });
+  localStorage.setItem('mode', mode);
+  const { data, error } = await sb.rpc('create_room', { p_nickname: nick, p_avatar: avatar, p_mode: mode });
   if (error) return toast(error.message);
   await enterRoom(data.code);
 }
@@ -81,8 +104,10 @@ async function enterRoom(code) {
   const { data, error } = await sb.from('rooms').select('*').eq('code', code).maybeSingle();
   if (error || !data) return toast('Could not open the room');
   room = data;
+  lastGameKey = '';
   show('room');
   await refresh();
+  loadLevelCounts();
   subscribe();
   beat();
   beatTimer = setInterval(beat, 30000);
@@ -93,7 +118,7 @@ async function enterRoom(code) {
 function subscribe() {
   const queue = () => { clearTimeout(refreshTimer); refreshTimer = setTimeout(refresh, 150); };
   channel = sb.channel('room-' + room.id);
-  for (const table of ['rooms', 'players', 'game_sessions', 'questions']) {
+  for (const table of ['rooms', 'players']) {
     channel.on('postgres_changes', { event: '*', schema: 'public', table }, queue);
   }
   channel.subscribe();
@@ -101,16 +126,14 @@ function subscribe() {
 
 async function refresh() {
   if (!room) return;
-  const [r, p, s] = await Promise.all([
+  const [r, p] = await Promise.all([
     sb.from('rooms').select('*').eq('id', room.id).maybeSingle(),
     sb.from('players').select('*').eq('room_id', room.id).order('joined_at'),
-    sb.from('game_sessions').select('*').eq('room_id', room.id)
-      .order('created_at', { ascending: false }).limit(100),
   ]);
   if (r.error || p.error) return; // network hiccup, try again later
   if (!r.data) return leave(true, 'This room is no longer available');
   if (!p.data.some((x) => x.user_id === me.id)) return leave(true, 'You are no longer in this room');
-  room = r.data; players = p.data; sessions = s.data || [];
+  room = r.data; players = p.data;
   render();
 }
 
@@ -121,65 +144,98 @@ function beat() {
 }
 
 // ---------- SCREEN ----------
+async function loadLevelCounts() {
+  const { data, error } = await sb.from('questions').select('category').is('room_id', null).limit(2000);
+  if (error) return;
+  levelCounts = {};
+  data.forEach((q) => { levelCounts[q.category] = (levelCounts[q.category] || 0) + 1; });
+  if (room) render();
+}
+
+function levelButtons() {
+  return Object.entries(LEVELS).map(([key, l]) => {
+    const empty = levelCounts && !levelCounts[key];
+    return `<button class="level ${l.cls} ${room.category === key ? 'sel' : ''}" data-level="${key}" ${empty ? 'disabled' : ''}>
+       <b>${l.name}</b><span>${l.sub}${empty ? ' · 🔒 Coming soon' : ''}</span></button>`;
+  }).join('');
+}
+
 function render() {
   const isHost = room.host_id === me.id;
-  $('roomCode').textContent = room.code;
+  const lv = levelOf(room.category);
   const cur = players.find((p) => p.id === room.current_player_id);
-  const box = $('gameBox');
+  const isCur = !!cur && cur.user_id === me.id;
+  const canAct = isHost || isCur;
+  const modeLabel = room.mode === 'sequential' ? '🔁 In order' : '🎲 Random';
 
+  $('roomCode').textContent = room.code;
+  const badge = $('levelBadge');
+  badge.className = 'lvlbadge ' + lv.cls;
+  badge.textContent = `${lv.name} - ${lv.sub}`;
+
+  // ----- main game panel -----
+  let html;
   if (room.status === 'lobby') {
-    box.innerHTML = `<div class="bigav">🎉</div><div class="who">Lobby</div>
-      <p class="muted">${players.length} player${players.length === 1 ? '' : 's'} in the room.<br>
-      Share the code or invite link with your friends.</p>` +
+    html = `<div class="bigav">🎉</div><div class="who">Lobby</div>
+      <p class="muted">${players.length} player${players.length === 1 ? '' : 's'} in the room<br>
+      Mode: ${modeLabel}<br>Share the code or invite link with your friends.</p>` +
       (isHost ? `<button data-act="start" class="primary">▶ Start game</button>`
               : `<p class="muted">Waiting for the host to start...</p>`);
   } else if (!cur) {
-    box.innerHTML = `<div class="bigav">🎲</div><div class="who">Ready for the next turn</div>` +
-      (isHost ? `<button data-act="spin" class="primary">🎲 Pick a random player</button>`
-              : `<p class="muted">Waiting for the host to spin...</p>`);
+    html = `<div class="bigav">🎲</div><div class="who">Ready for the next turn</div>` +
+      (isHost ? `<button data-act="turn" class="primary">▶ Start next turn</button>`
+              : `<p class="muted">Waiting for the host...</p>`);
   } else if (!room.current_prompt) {
-    const you = cur.user_id === me.id;
-    box.innerHTML = `<div class="bigav">${esc(cur.avatar)}</div>
-      <div class="who">${esc(cur.nickname)}${you ? ' (you)' : ''}, truth or dare?</div>` +
-      (isHost ? `<p class="muted">Tap what they choose:</p>
-        <div class="row"><button data-act="pick-truth" class="primary">Truth</button>
-        <button data-act="pick-dare" class="primary">Dare</button></div>`
-              : `<p class="muted">${you ? 'Tell the host your choice!' : 'Waiting for their choice...'}</p>`);
+    html = `<div class="bigav">${esc(cur.avatar)}</div>
+      <div class="who">${isCur ? `Your turn, ${esc(cur.nickname)}!` : `${esc(cur.nickname)}'s turn`}</div>` +
+      (canAct
+        ? `<p class="muted">${isCur ? 'Truth or dare?' : 'Wait for them to choose, or choose for them:'}</p>
+           <div class="row"><button data-act="pick-truth" class="primary">Truth</button>
+           <button data-act="pick-dare" class="primary">Dare</button></div>
+           <button data-act="skip" class="ghost">⏭ Skip this turn</button>`
+        : `<p class="muted">Waiting for ${esc(cur.nickname)} to choose...</p>`);
   } else {
-    box.innerHTML = `<div class="bigav">${esc(cur.avatar)}</div>
-      <div class="who">${esc(cur.nickname)}${cur.user_id === me.id ? ' (you)' : ''}</div>
+    html = `<div class="bigav">${esc(cur.avatar)}</div>
+      <div class="who">${esc(cur.nickname)}${isCur ? ' (you)' : ''}</div>
       <div><span class="badge ${room.current_type}">${room.current_type.toUpperCase()}</span></div>
       <div class="prompt">${esc(room.current_prompt)}</div>` +
-      (isHost ? `<div class="row"><button data-act="done" class="good">✅ Done +1</button>
-        <button data-act="skip" class="bad">⏭ Skip</button></div>
-        <button data-act="reroll" class="ghost">🔄 Different question</button>`
-              : `<p class="muted">The host will mark it done or skipped.</p>`);
+      (canAct
+        ? `<div class="row"><button data-act="done" class="good">✅ Done · next</button>
+           <button data-act="skip" class="bad">⏭ Skip</button></div>
+           <button data-act="reroll" class="ghost">🔄 Different question</button>`
+        : `<p class="muted">Waiting for ${esc(cur.nickname)} to finish...</p>`);
   }
+  const box = $('gameBox');
+  box.className = 'card game ' + lv.cls;
+  const changed = setHtml(box, `<div class="inner">${html}</div>`);
+  const key = [room.status, room.current_player_id, room.current_prompt].join('|');
+  if (changed && key !== lastGameKey) box.firstElementChild.classList.add('pop');
+  lastGameKey = key;
 
+  // ----- host controls -----
   const hb = $('hostBox');
   hb.classList.toggle('hidden', !isHost);
   if (isHost) {
-    hb.innerHTML = `<h2>👑 Host controls</h2>
-      <label for="catSel">Question category</label>
-      <select id="catSel">
-        ${['mixed', 'mild', 'spicy'].map((c) =>
-          `<option value="${c}" ${room.category === c ? 'selected' : ''}>${c[0].toUpperCase() + c.slice(1)}</option>`).join('')}
-      </select>` +
-      (room.status === 'playing' ? `<button data-act="end" class="ghost">⏹ Back to lobby</button>` : '');
+    setHtml(hb, `<h2>👑 Host controls</h2>
+      <div class="levels-title">LEVELS</div>
+      <div class="levels">${levelButtons()}</div>
+      <p class="small">Mode: ${modeLabel}</p>` +
+      (room.status === 'playing' ? `<button data-act="end" class="ghost">⏹ Back to lobby</button>` : ''));
   }
 
-  const sorted = [...players].sort((a, b) => b.score - a.score || a.joined_at.localeCompare(b.joined_at));
-  $('scoreBox').innerHTML = sorted.map((p) => {
+  // ----- players -----
+  setHtml($('playersBox'), players.map((p) => {
     const online = Date.now() - new Date(p.last_seen).getTime() < 90000;
-    return `<div class="player ${p.id === room.current_player_id ? 'turn' : ''}">
+    const turn = p.id === room.current_player_id;
+    return `<div class="player ${turn ? 'turn ' + lv.cls : ''}">
       <span class="dot ${online ? 'on' : ''}"></span>
       <span class="pav">${esc(p.avatar)}</span>
       <span class="pname">${esc(p.nickname)}
         <span class="tag">${p.user_id === room.host_id ? '👑 host ' : ''}${p.user_id === me.id ? '(you)' : ''}</span></span>
-      <span class="pts">${p.score}</span>
+      ${turn ? '<span class="tag">🎯 turn</span>' : ''}
       ${isHost && p.user_id !== me.id ? `<button class="kick" data-act="kick" data-id="${p.id}">✕</button>` : ''}
     </div>`;
-  }).join('');
+  }).join(''));
 }
 
 // ---------- ACTIONS ----------
@@ -189,46 +245,21 @@ async function updateRoom(fields) {
   await refresh();
 }
 
-async function pickPrompt(type) {
-  const { data, error } = await sb.from('questions').select('text,category,room_id').eq('type', type);
-  if (error) throw error;
-  let pool = data.filter((q) => q.room_id === null || q.room_id === room.id);
-  if (room.category !== 'mixed') {
-    pool = pool.filter((q) => q.room_id !== null || q.category === room.category);
-  }
-  const used = new Set(sessions.map((s) => s.prompt));
-  const fresh = pool.filter((q) => !used.has(q.text));
-  const choice = rand(fresh.length ? fresh : pool);
-  if (!choice) throw new Error('No questions found for this category');
-  await updateRoom({ current_type: type, current_prompt: choice.text });
-}
-
-async function spin() {
-  const counts = {};
-  players.forEach((p) => (counts[p.id] = 0));
-  sessions.forEach((s) => { if (s.player_id in counts) counts[s.player_id]++; });
-  const min = Math.min(...Object.values(counts));
-  let pool = players.filter((p) => counts[p.id] === min);
-  const last = sessions[0] && sessions[0].player_id;
-  if (pool.length > 1) pool = pool.filter((p) => p.id !== last);
-  await updateRoom({ current_player_id: rand(pool).id, current_type: null, current_prompt: null });
-}
-
-async function finish(result) {
-  const { error } = await sb.rpc('finish_turn', { p_room_id: room.id, p_result: result });
+async function call(name, args) {
+  const { error } = await sb.rpc(name, { p_room_id: room.id, ...args });
   if (error) throw error;
   await refresh();
 }
 
 async function act(a, el) {
   try {
-    if (a === 'start') await updateRoom({ status: 'playing' });
-    else if (a === 'spin') await spin();
-    else if (a === 'pick-truth') await pickPrompt('truth');
-    else if (a === 'pick-dare') await pickPrompt('dare');
-    else if (a === 'reroll') await pickPrompt(room.current_type);
-    else if (a === 'done') await finish('completed');
-    else if (a === 'skip') await finish('skipped');
+    if (a === 'start') { await updateRoom({ status: 'playing' }); await call('next_turn', {}); }
+    else if (a === 'turn') await call('next_turn', {});
+    else if (a === 'pick-truth') await call('choose_prompt', { p_type: 'truth' });
+    else if (a === 'pick-dare') await call('choose_prompt', { p_type: 'dare' });
+    else if (a === 'reroll') await call('choose_prompt', { p_type: room.current_type });
+    else if (a === 'done') await call('next_turn', { p_result: 'completed' });
+    else if (a === 'skip') await call('next_turn', { p_result: 'skipped' });
     else if (a === 'end') await updateRoom({ status: 'lobby', current_player_id: null, current_type: null, current_prompt: null });
     else if (a === 'kick') {
       const { error } = await sb.from('players').delete().eq('id', el.dataset.id);
@@ -254,23 +285,13 @@ async function leave(silent, msg) {
   }
   if (channel) sb.removeChannel(channel);
   clearInterval(pollTimer); clearInterval(beatTimer); clearTimeout(refreshTimer);
-  channel = null; room = null; players = []; sessions = [];
+  channel = null; room = null; players = [];
+  ['gameBox', 'hostBox', 'playersBox'].forEach((id) => { $(id)._h = null; });
   localStorage.removeItem('lastRoom');
   $('btnRejoin').classList.add('hidden');
   history.replaceState(null, '', location.pathname);
   show('home');
   if (msg) toast(msg);
-}
-
-async function addQuestion() {
-  const text = $('cqText').value.trim();
-  if (text.length < 3) return toast('Write at least 3 letters');
-  const { error } = await sb.from('questions').insert({
-    room_id: room.id, type: $('cqType').value, category: 'custom', text, created_by: me.id,
-  });
-  if (error) return toast(error.message);
-  $('cqText').value = '';
-  toast('Question added!');
 }
 
 // ---------- EVENTS ----------
@@ -281,15 +302,15 @@ document.addEventListener('click', (e) => {
     document.querySelectorAll('.av').forEach((b) => b.classList.toggle('sel', b === av));
     return;
   }
+  const md = e.target.closest('[data-mode]');
+  if (md) { mode = md.dataset.mode; paintMode(); return; }
+  const lvl = e.target.closest('[data-level]');
+  if (lvl) { updateRoom({ category: lvl.dataset.level }).catch((x) => toast(x.message)); return; }
   const btn = e.target.closest('[data-act]');
   if (btn) act(btn.dataset.act, btn);
-});
-document.addEventListener('change', (e) => {
-  if (e.target.id === 'catSel') updateRoom({ category: e.target.value }).catch((x) => toast(x.message));
 });
 $('btnCreate').addEventListener('click', createRoom);
 $('btnJoin').addEventListener('click', () => joinRoom());
 $('btnRejoin').addEventListener('click', () => joinRoom(localStorage.getItem('lastRoom')));
-$('btnAddQ').addEventListener('click', addQuestion);
 
 init();
