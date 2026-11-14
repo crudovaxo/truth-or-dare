@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#14111f">
+  <title>Truth or Dare</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="toast"></div>
+
+  <!-- HOME -->
+  <main id="home" class="view">
+    <h1>🎭 Truth or Dare</h1>
+    <p class="sub">Play with friends, from anywhere.</p>
+
+    <section class="card">
+      <label for="nick">Your nickname</label>
+      <input id="nick" maxlength="20" placeholder="e.g. Rohan" autocomplete="off">
+      <label>Pick an avatar</label>
+      <div id="avatars" class="avatars"></div>
+    </section>
+
+    <section class="card">
+      <button id="btnCreate" class="primary">➕ Create a room</button>
+      <div class="or">or join a friend's room</div>
+      <input id="code" maxlength="6" placeholder="ROOM CODE" autocapitalize="characters" autocomplete="off">
+      <button id="btnJoin" class="secondary">Join room</button>
+      <button id="btnRejoin" class="ghost hidden"></button>
+    </section>
+  </main>
+
+  <!-- ROOM -->
+  <main id="room" class="view hidden">
+    <header class="roomhead">
+      <div>
+        <div class="small">Room code</div>
+        <div id="roomCode" class="code"></div>
+      </div>
+      <div class="headbtns">
+        <button data-act="copy" class="secondary">📋 Code</button>
+        <button data-act="share" class="secondary">🔗 Invite</button>
+      </div>
+    </header>
+
+    <section id="gameBox" class="card game"></section>
+    <section id="hostBox" class="card hidden"></section>
+
+    <section class="card">
+      <h2>🏆 Scoreboard</h2>
+      <div id="scoreBox"></div>
+    </section>
+
+    <section class="card">
+      <h2>✏️ Add your own question</h2>
+      <select id="cqType">
+        <option value="truth">Truth</option>
+        <option value="dare">Dare</option>
+      </select>
+      <input id="cqText" maxlength="300" placeholder="Type a truth or dare..." autocomplete="off">
+      <button id="btnAddQ" class="secondary">Add to this room</button>
+    </section>
+
+    <button data-act="leave" class="ghost">Leave room</button>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

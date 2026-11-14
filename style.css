@@ -1,0 +1,63 @@
+:root{
+  --bg:#14111f; --card:#201b33; --card2:#2a2444; --text:#f4f1ff; --muted:#a79fc4;
+  --accent:#ff4f8b; --accent2:#7c5cff; --good:#34d399; --bad:#f87171;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;background:var(--bg);color:var(--text);
+  font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;line-height:1.4}
+.view{max-width:480px;margin:0 auto;padding:20px 16px 40px}
+.hidden{display:none!important}
+h1{text-align:center;margin:12px 0 0;font-size:2rem}
+h2{margin:0 0 12px;font-size:1.1rem}
+.sub{text-align:center;color:var(--muted);margin:4px 0 20px}
+.card{background:var(--card);border-radius:16px;padding:16px;margin-bottom:14px}
+label{display:block;font-size:.85rem;color:var(--muted);margin:10px 0 6px}
+label:first-child{margin-top:0}
+input,select{width:100%;padding:13px;border-radius:12px;border:2px solid transparent;
+  background:var(--card2);color:var(--text);font-size:1rem;margin-bottom:10px}
+input:focus,select:focus{outline:none;border-color:var(--accent2)}
+#code{text-align:center;letter-spacing:.3em;font-weight:700;text-transform:uppercase}
+button{width:100%;padding:14px;border:0;border-radius:12px;font-size:1rem;font-weight:700;
+  color:#fff;cursor:pointer;margin-top:4px}
+button:active{transform:scale(.98)}
+button:disabled{opacity:.5}
+.primary{background:linear-gradient(135deg,var(--accent),var(--accent2))}
+.secondary{background:var(--card2);border:2px solid var(--accent2)}
+.ghost{background:transparent;color:var(--muted);border:2px solid var(--card2);margin-top:8px}
+.good{background:var(--good);color:#06281c}
+.bad{background:var(--bad);color:#2b0707}
+.or{text-align:center;color:var(--muted);margin:14px 0 10px;font-size:.9rem}
+.avatars{display:grid;grid-template-columns:repeat(6,1fr);gap:8px}
+.av{font-size:1.6rem;padding:8px 0;border-radius:12px;background:var(--card2);
+  border:2px solid transparent;text-align:center;cursor:pointer;margin:0}
+.av.sel{border-color:var(--accent);background:#3a2a55}
+.roomhead{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:14px}
+.code{font-size:2rem;font-weight:800;letter-spacing:.2em}
+.small{font-size:.75rem;color:var(--muted)}
+.headbtns{display:flex;gap:8px}
+.headbtns button{width:auto;padding:10px 12px;font-size:.85rem;margin:0}
+.game{text-align:center;min-height:170px;display:flex;flex-direction:column;justify-content:center}
+.bigav{font-size:3.5rem}
+.who{font-size:1.3rem;font-weight:800;margin:4px 0 10px}
+.badge{display:inline-block;padding:4px 14px;border-radius:99px;font-weight:800;
+  letter-spacing:.1em;font-size:.8rem;margin-bottom:10px}
+.badge.truth{background:var(--accent2)}
+.badge.dare{background:var(--accent)}
+.prompt{font-size:1.3rem;font-weight:700;margin:6px 0 14px}
+.muted{color:var(--muted)}
+.row{display:flex;gap:8px}
+.row button{margin-top:0}
+.player{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--card2)}
+.player:last-child{border-bottom:0}
+.player .pav{font-size:1.6rem}
+.player .pname{flex:1;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.player .tag{font-size:.7rem;color:var(--muted);font-weight:400}
+.player .pts{font-weight:800;font-size:1.2rem;min-width:28px;text-align:right}
+.player.turn{background:#3a2a55;border-radius:10px;padding-left:8px;padding-right:8px}
+.dot{width:9px;height:9px;border-radius:50%;background:#555;flex:none}
+.dot.on{background:var(--good)}
+.kick{width:auto;padding:4px 10px;margin:0;font-size:.8rem;background:var(--card2);color:var(--bad)}
+#toast{position:fixed;left:50%;top:16px;transform:translateX(-50%);background:#000;color:#fff;
+  padding:10px 16px;border-radius:12px;z-index:9;opacity:0;pointer-events:none;
+  transition:opacity .2s;max-width:90%;text-align:center}
+#toast.show{opacity:1}
